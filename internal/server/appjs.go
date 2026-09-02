@@ -50,7 +50,7 @@ if(frame){
       setInterval(syncURL,2000);
     }catch(e){bar.disabled=false;setHint(e.message);}
   };
-  const syncURL=async()=>{if(!ready||editing9return;try{const x=await api('/api/runtime/current');if(x.url&&x.url!=='about:blank')bar.value=x.url;}catch(_){}};
+  const syncURL=async()=>{if(!ready||editing)return;try{const x=await api('/api/runtime/current');if(x.url&&x.url!=='about:blank')bar.value=x.url;}catch(_){}};
   bar.addEventListener('focus',()=>editing=true); bar.addEventListener('blur',()=>editing=false);
   $('#address-form').addEventListener('submit',async(e)=>{
     e.preventDefault(); if(!ready)return;
