@@ -19,7 +19,7 @@ func main() {
 	}
 	addr := os.Getenv("INPAGE_ADDR")
 	if addr == "" {
-		addr = "127.0.0.1:4002"
+		addr = "0.0.0.0:4002"
 	}
 	app, err := server.New(dataDir)
 	if err != nil {
