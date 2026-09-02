@@ -15,6 +15,17 @@ func TestDockerRunArgsAreEphemeralAndBoundToLoopback(t *testing.T) {
 	}
 }
 
+func TestDockerRunArgsAddsBrowserProxy(t *testing.T) {
+	t.Setenv("INPAGE_BROWSER_PROXY", "socks5://host.docker.internal:51837")
+	a := dockerRunArgs("ipb-test", "secret", "/srv/profile", "kasmweb/chromium:1.18.0")
+	joined := strings.Join(a, " ")
+	for _, want := range []string{"--add-host host.docker.internal:host-gateway", "--proxy-server=socks5://host.docker.internal:51837"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in %s", want, joined)
+		}
+	}
+}
+
 func TestProfileKeyStableAndOpaque(t *testing.T) {
 	a := profileKey("user-1")
 	b := profileKey("user-1")

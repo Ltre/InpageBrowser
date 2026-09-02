@@ -187,17 +187,25 @@ func (m *Manager) Proxy(rt *Runtime) *httputil.ReverseProxy {
 }
 
 func dockerRunArgs(name, password, profile, image string) []string {
-	return []string{
+	appArgs := "--kiosk --no-first-run --no-default-browser-check --disable-session-crashed-bubble --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --remote-allow-origins=*"
+	args := []string{
 		"run", "-d", "--rm", "--name", name,
 		"--label", "inpagebrowser.runtime=1",
 		"--shm-size=384m", "--memory=1100m", "--memory-swap=1536m", "--cpus=1.5", "--pids-limit=512",
 		"-p", "127.0.0.1::6901", "-p", "127.0.0.1::9222",
-		"-e", "VNC_PW=" + password,
-		"-e", "LAUNCH_URL=about:blank",
-		"-e", "APP_ARGS=--kiosk --no-first-run --no-default-browser-check --disable-session-crashed-bubble --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --remote-allow-origins=*",
-		"-v", profile + ":/home/kasm-user",
-		image,
 	}
+	if browserProxy := strings.TrimSpace(os.Getenv("INPAGE_BROWSER_PROXY")); browserProxy != "" {
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+		appArgs += " --proxy-server=" + browserProxy
+	}
+	args = append(args,
+		"-e", "VNC_PW="+password,
+		"-e", "LAUNCH_URL=about:blank",
+		"-e", "APP_ARGS="+appArgs,
+		"-v", profile+":/home/kasm-user",
+		image,
+	)
+	return args
 }
 
 func dockerMappedPort(ctx context.Context, name, port string) (int, error) {
