@@ -30,7 +30,7 @@ Type=simple
 User=$TARGET_USER
 SupplementaryGroups=docker
 WorkingDirectory=$ROOT_DIR
-Environment=INPAGE_ADDR=127.0.0.1:4002
+Environment=INPAGE_ADDR=0.0.0.0:4002
 Environment=INPAGE_DATA_DIR=$ROOT_DIR/data
 Environment=INPAGE_BROWSER_IMAGE=$IMAGE
 ExecStart=$ROOT_DIR/bin/inpagebrowser
@@ -43,5 +43,5 @@ SERVICE
 systemctl daemon-reload
 systemctl enable --now inpagebrowser
 echo '[5/5] 完成。'
-echo '服务监听: 127.0.0.1:4002'
+echo '服务监听: 0.0.0.0:4002'
 echo '查看状态: systemctl status inpagebrowser'
