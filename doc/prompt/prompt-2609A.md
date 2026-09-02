@@ -1287,3 +1287,118 @@ doc/devlog/devlog-2609A-features.md
 * `total_commits = 1`
 
 即相对原来的 `Initial commit`，本轮**只产生了 1 个新 commit**，没有创建 PR。
+
+
+问：
+
+	还要写个windows版的启动脚本，要考虑使用代理。
+	
+
+答：
+
+		
+	我会补一个 Windows 开发启动脚本，重点不是照搬 FmlySys，而是针对 InpageBrowser 的实际依赖做：4002 监听、代理环境、Go 依赖准备、数据目录，以及 Docker/KasmVNC 在 Windows 上的可用性检查。Windows 本地开发最大区别是 Docker Desktop/WSL2，所以脚本会检测 Docker daemon 是否真正可用，而不是只检查 docker.exe。
+
+	Windows 脚本我不会每次 go mod tidy 改工作区，而会把启动职责分清：代理只作用于当前 CMD 进程；自动定位仓库、准备 data、检查 Go；检测 Docker Desktop daemon，未启动时尝试自动拉起；检查 Kasm Chromium 镜像，不存在才 docker pull；最后构建并启动 0.0.0.0:4002。这样重复启动不会反复拉镜像或留下额外容器。
+
+	代理处理我会保留成“默认值 + 可覆盖”，而不是把你示例里的端口写死成不可改：默认仍用 127.0.0.1:58591 的 HTTP/HTTPS 和 127.0.0.1:51837 的 SOCKS5，同时设置大小写两套环境变量和 NO_PROXY。如果你以后换代理端口，只需在启动前设 INPAGE_HTTP_PROXY / INPAGE_HTTPS_PROXY / INPAGE_ALL_PROXY，不用改脚本主体。
+
+	我还会顺手补一个 .gitignore，因为 Windows 启动脚本会生成 bin\inpagebrowser-dev.exe 和 data\；这两个本来就是运行态数据，不应该让每次本地启动都把 Git 工作区弄脏。Docker 容器仍保持 --rm，脚本只检查/自动拉起 Docker Desktop 和缺失镜像，不会创建长期固定容器。
+
+	远端刚刚比我上一轮的提交又前进了一次：你新增了 Create prompt-2609A.md（HEAD 现在是 d5812a40...）。我会保留这个提交和它的文件，最终 Windows 脚本提交直接建立在这个最新 HEAD 上，不会回退或覆盖。
+
+	Windows 脚本、README、devlog 和 .gitignore 的 Git blob 已经准备好，但分支还没提交。我现在再次检查远端 HEAD；如果你这几分钟又推了新内容，我会继续以最新 tree 为基线，避免把你的提交覆盖掉。
+
+	还有一个我刚确认的关键点：仅给 Windows CMD 设置 HTTP_PROXY 并不能保证容器里的 Chromium走你本机代理，因为容器里的 127.0.0.1 是容器自己。为了让 Windows 本地实际能测境外网页，我会再加一层：Windows 脚本默认把远程 Chromium 的代理设为 socks5://host.docker.internal:51837，Go runtime 启动容器时自动给 Chromium 加 --proxy-server。Linux 生产不设置该变量，就仍然直连境外网络。
+
+	我已经用一个最小 runtime 测试夹具把这次 Go 改动实际跑过：dockerRunArgs 在未设置浏览器代理时保持原行为；设置 INPAGE_BROWSER_PROXY=socks5://host.docker.internal:51837 时，会自动加入 Docker host-gateway 和 Chromium --proxy-server，测试通过。接下来把这部分和 Windows 脚本一起写进最终 commit。
+
+	最终 tree 已经基于你刚新增 prompt-2609A.md 后的最新 tree 创建，因此你的提交被完整保留。现在只生成这轮唯一 commit：Windows 启动脚本 + 代理透传 + runtime 单测 + 文档，不会建 PR。
+	
+	已完成并推送到 `dev-2609A-step1`。
+
+	新增 Windows 启动脚本：
+
+	```text
+	scripts/win-dev.start.cmd
+	```
+
+	主要行为：
+
+	* 默认监听 `0.0.0.0:4002`。
+	* 自动准备 `data/`、`data/profiles/`、`bin/`。
+	* 检查 Go、Docker CLI、Docker daemon。
+	* Docker Desktop 已安装但没启动时，会尝试自动启动并等待约 90 秒。
+	* `kasmweb/chromium:1.18.0` 仅在本机不存在时才 `docker pull`。
+	* 不在每次启动时执行 `go mod tidy`，避免修改工作区。
+	* 自动 `go mod download`、`go mod verify`、build 后启动。
+
+	代理默认参考你给的环境：
+
+	```text
+	HTTP/HTTPS   http://127.0.0.1:58591
+	SOCKS5       socks5://127.0.0.1:51837
+	```
+
+	并同时设置大小写代理变量。
+
+	另外专门处理了**容器里的 Chromium 代理**。因为容器里的 `127.0.0.1:51837` 并不是 Windows 主机，所以默认：
+
+	```text
+	INPAGE_BROWSER_PROXY=socks5://host.docker.internal:51837
+	```
+
+	Go runtime 在启动 Chromium 容器时会自动加入：
+
+	```text
+	host.docker.internal:host-gateway
+	```
+
+	并给 Chromium 增加：
+
+	```text
+	--proxy-server=socks5://host.docker.internal:51837
+	```
+
+	因此 Windows 主机自己的 Go/Docker CLI 网络与**远程 Chromium 的网页访问**两条代理路径都考虑到了。
+
+	代理端口以后也可以启动前覆盖，例如：
+
+	```bat
+	set INPAGE_HTTP_PROXY=http://127.0.0.1:7890
+	set INPAGE_HTTPS_PROXY=http://127.0.0.1:7890
+	set INPAGE_ALL_PROXY=socks5://127.0.0.1:7891
+	set INPAGE_BROWSER_PROXY=socks5://host.docker.internal:7891
+	scripts\win-dev.start.cmd
+	```
+
+	同时新增 `.gitignore`，忽略 `/data/`、`/bin/` 和 exe，避免本地运行污染 Git 状态。
+
+	我也保留了你期间自己提交的：
+
+	```text
+	d5812a403e6329352086471c91d64b5f2665355f
+	Create prompt-2609A.md
+	```
+
+	本轮提交建立在它上面，没有覆盖。
+
+	本轮唯一新提交：
+
+	```text
+	48e7e1eb290a4af1ef83994ddd22c77779e6b02b
+	新增 Windows 代理开发启动脚本
+	```
+
+	远端 HEAD 已确认就是该提交。
+
+	并核验：
+
+	* `ahead_by = 1`
+	* `behind_by = 0`
+	* `total_commits = 1`
+	* 没有 PR
+
+	验证方面，我用独立 runtime 测试夹具实际执行了 `gofmt` 和 `go test ./internal/runtime`，Chromium 代理参数测试通过。当前执行环境不是 Windows，所以没有虚报 `cmd.exe + Docker Desktop + KasmVNC` 的 Windows 真实端到端启动测试。
+
+
