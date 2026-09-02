@@ -1,0 +1,160 @@
+问：
+
+	我执行了一下InpageBrowser的linux启动脚本，里面的1G多和100多M是下载什么
+	
+	
+答：
+
+
+
+
+
+
+
+你截图里这 **1.119GB 和 143MB 都是在下载 `kasmweb/chromium:1.18.0` Docker 镜像的分层数据**，不是又装了什么额外的一整套 Kasm Workspaces。
+
+从截图能直接看到：
+
+```text
+[2/5] 拉取 kasmweb/chromium:1.18.0 ...
+1.18.0: Pulling from kasmweb/chromium
+
+d3e7c97af490: Downloading ... 153MB/1.119GB
+4cb85b942f7c: Downloading ... 104.3MB/143MB
+...
+```
+
+Docker 镜像不是一个单独的大文件，而是一堆 layer：
+
+```text
+kasmweb/chromium:1.18.0
+├─ layer A    1.119 GB   ← 你看到最大的这个
+├─ layer B      143 MB
+├─ layer C       ...
+├─ layer D       ...
+└─ 其它若干小层
+```
+
+### 1.119GB 那层大概是什么
+
+它不是“单独一个 Chromium 1GB”。
+
+`kasmweb/chromium` 本身是一个可以直接运行图形 Chromium 的完整 Linux 容器环境，所以里面包含很多东西，例如：
+
+- Linux/Ubuntu 用户态基础环境
+- Chromium
+- Chromium 运行依赖
+- GTK / X11 等图形库
+- KasmVNC
+- 窗口管理/桌面运行所需组件
+- 字体
+- 音视频 codec / ffmpeg 相关库
+- 各种系统共享库
+- Kasm 自己的启动脚本和组件
+
+所以它比普通的：
+
+```text
+golang:alpine
+nginx:alpine
+```
+
+这种 Docker 镜像大很多。
+
+### 143MB 也是同一个镜像的一层
+
+例如 Docker 镜像构建时可能类似：
+
+```Dockerfile
+FROM kasmweb/core-ubuntu...
+RUN apt install ...
+RUN install chromium ...
+COPY ...
+RUN ...
+```
+
+每一步可能形成一个 layer。
+
+因此你看到：
+
+```text
+1.119GB
+143MB
+几十 MB
+几 MB
+...
+```
+
+最后共同组成一个：
+
+```text
+kasmweb/chromium:1.18.0
+```
+
+### 实际磁盘占用还会比下载量大
+
+这里尤其要注意。
+
+Docker `pull` 显示的基本是**传输层大小**。下载以后还要解压到 Docker 本地存储。
+
+所以假设最终网络下载合计大约：
+
+```text
+1.3～1.6GB
+```
+
+实际：
+
+```bash
+docker images
+```
+
+看到的镜像占用可能会达到 **数 GB**。
+
+等下载完你可以执行：
+
+```bash
+docker images kasmweb/chromium
+```
+
+以及：
+
+```bash
+docker system df
+```
+
+就能看到它实际吃了多少磁盘。
+
+### 这只下载一次
+
+正常情况下这一大坨**不是每个成员都重新下载一次**。
+
+服务器只保存一份：
+
+```text
+kasmweb/chromium:1.18.0
+```
+
+以后：
+
+```text
+成员 A → container A ─┐
+成员 B → container B ─┼→ 共用同一份 Chromium image
+成员 C → container C ─┘
+```
+
+每个成员动态创建的 container 只是基于这个镜像启动。
+
+而且我们现在的设计用了 `--rm`：
+
+```text
+用户不用
+→ stop
+→ container 自动删除
+```
+
+所以不会每个成员再占一份 1GB+ 镜像。
+
+你截图里的这次大下载，**就是首次把“真正能跑 Chromium + KasmVNC 的运行环境”搬到服务器上**。下载完成以后正常启动 InpageBrowser 不会再重复下载这 1GB 多，除非你删除镜像或者以后升级 `kasmweb/chromium` 版本。
+
+

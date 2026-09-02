@@ -1,0 +1,48 @@
+ scripts]# bash bootstrap-linux.sh 
+ 
+Created symlink from /etc/systemd/system/multi-user.target.wants/docker.service to /usr/lib/systemd/system/docker.service.
+[2/5] 拉取 kasmweb/chromium:1.18.0 ...
+1.18.0: Pulling from kasmweb/chromium
+d3e7c97af490: Pull complete 
+4f4fb700ef54: Pull complete 
+1524770571c1: Pull complete 
+4cb85b942f7c: Pull complete 
+731c75474ee6: Pull complete 
+4375fe1ac7a3: Pull complete 
+c72dc3075040: Pull complete 
+b03e1cbf63a1: Pull complete 
+cd7b4de542ef: Pull complete 
+be318f3616a0: Pull complete 
+ff8e05013a87: Pull complete 
+ef345c3616a3: Pull complete 
+2e0f6c97db49: Pull complete 
+30924ef0e2ff: Pull complete 
+01bf4e5a50f5: Pull complete 
+08dae7474bb3: Pull complete 
+b420e1e65697: Pull complete 
+196eddbd8755: Pull complete 
+09710af56a6b: Pull complete 
+Digest: sha256:172d82c1d4232a27d0f0a9cf18a48829dba55f1f9b0299a25b8635edf5ed2def
+Status: Downloaded newer image for kasmweb/chromium:1.18.0
+docker.io/kasmweb/chromium:1.18.0
+[3/5] 准备数据目录...
+[4/5] 构建 InpageBrowser...
+Created symlink from /etc/systemd/system/multi-user.target.wants/inpagebrowser.service to /etc/systemd/system/inpagebrowser.service.
+[5/5] 完成。
+服务监听: 127.0.0.1:4002
+查看状态: systemctl status inpagebrowser
+
+
+
+ scripts]# telnet localhost 4002
+Trying ::1...
+telnet: connect to address ::1: Connection refused
+Trying 127.0.0.1...
+Connected to localhost.
+Escape character is '^]'.
+
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain; charset=utf-8
+Connection: close
+
+400 Bad RequestConnection closed by foreign host.
