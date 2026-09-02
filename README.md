@@ -34,6 +34,51 @@ sudo ./scripts/bootstrap-linux.sh
 
 > 安装脚本仍需要一次 root/sudo，这是安装 Docker daemon 和 systemd service 无法避免的宿主机权限边界。
 
+## Windows 开发启动
+
+Windows 本地开发使用：
+
+```bat
+scripts\win-dev.start.cmd
+```
+
+脚本会自动完成仓库定位、数据目录准备、Go 依赖下载/校验、开发二进制构建，并检查 Docker Desktop 是否可用。若 Docker CLI 已安装但 daemon 尚未启动，会尝试自动启动标准安装位置下的 Docker Desktop并等待 Linux container engine 就绪；Kasm Chromium 镜像仅在本机缺失时才自动拉取。
+
+Windows 开发默认监听 `0.0.0.0:4002`，因此同机可访问 `http://localhost:4002/`，局域网也能访问该端口。需要注意：Passkey/WebAuthn 在另一台设备上通常要求 HTTPS secure context，单纯的 LAN HTTP 地址即使页面可达也可能被浏览器禁止使用 Passkey。
+
+脚本默认使用以下本地代理，并同时设置大小写两套标准代理环境变量：
+
+- HTTP/HTTPS：`http://127.0.0.1:58591`
+- SOCKS5：`socks5://127.0.0.1:51837`
+- `NO_PROXY`：`127.0.0.1,localhost,::1,host.docker.internal`
+- 容器内 Chromium：`socks5://host.docker.internal:51837`
+
+由于 Chromium 运行在 Docker 容器中，容器内的 `127.0.0.1` 不是 Windows 主机，所以浏览器代理单独使用 `host.docker.internal`。Go runtime 在设置 `INPAGE_BROWSER_PROXY` 时会给容器加入 host-gateway，并把该地址写入 Chromium 的 `--proxy-server`。
+
+可在运行脚本前覆盖：
+
+- `INPAGE_HTTP_PROXY`
+- `INPAGE_HTTPS_PROXY`
+- `INPAGE_ALL_PROXY`
+- `INPAGE_NO_PROXY`
+- `INPAGE_BROWSER_PROXY`
+
+例如：
+
+```bat
+set INPAGE_HTTP_PROXY=http://127.0.0.1:7890
+set INPAGE_HTTPS_PROXY=http://127.0.0.1:7890
+set INPAGE_ALL_PROXY=socks5://127.0.0.1:7891
+set INPAGE_BROWSER_PROXY=socks5://host.docker.internal:7891
+scripts\win-dev.start.cmd
+```
+
+如果本地浏览器容器应直接联网，可以在启动前显式设置 `INPAGE_BROWSER_PROXY=direct://`。
+
+脚本不会每次运行 `go mod tidy`，避免启动过程改写仓库模块文件；也不会创建固定 Docker container。远程浏览器仍由 InpageBrowser 在用户真正进入后按需创建，并由既有 `--rm` / idle reaper 机制回收。
+
+> Windows 首次开发仍需要先安装 Docker Desktop（WSL2/Linux containers）和 Go 1.23+。脚本负责日常启动 Docker Desktop、检查 daemon、按需拉取镜像，不会替用户修改 Docker Desktop 的全局 GUI 配置。Docker Desktop 的镜像拉取由 daemon 执行；若它没有继承 Windows/system proxy，即使当前 CMD 已设置代理，首次 `docker pull` 仍可能需要让 Docker Desktop 使用系统代理。
+
 ## Nginx + Cloudflare 回源
 
 项目不要求 Nginx 在源站监听 HTTPS。示例见：
@@ -54,6 +99,7 @@ sudo ./scripts/bootstrap-linux.sh
 - `INPAGE_ADDR`：监听地址，默认 `127.0.0.1:4002`
 - `INPAGE_DATA_DIR`：数据目录，默认 `./data`
 - `INPAGE_BROWSER_IMAGE`：Kasm Chromium 镜像，默认 `kasmweb/chromium:1.18.0`
+- `INPAGE_BROWSER_PROXY`：可选 Chromium 代理；为空时 Chromium 直连，Windows 脚本默认设为 `socks5://host.docker.internal:51837`
 - `INPAGE_MAX_ACTIVE`：全机同时活跃浏览器数，默认 `1`
 - `INPAGE_IDLE_MINUTES`：无页面 heartbeat 后回收分钟数，默认 `10`
 
