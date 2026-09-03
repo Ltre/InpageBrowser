@@ -217,7 +217,7 @@ func dockerRunArgsForNetwork(name, password, profile, image string, hostNetwork 
 		"--shm-size=384m", "--memory=1100m", "--memory-swap=1536m", "--cpus=1.5", "--pids-limit=512",
 	}
 	if hostNetwork {
-		args = append(args, "--network", "host")
+		args = append(args, "--network", "host", "--hostname", name, "--add-host", name+":127.0.0.1")
 	} else {
 		args = append(args, "-p", "127.0.0.1::6901", "-p", "127.0.0.1::9222")
 	}
