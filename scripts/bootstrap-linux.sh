@@ -41,7 +41,9 @@ RestartSec=3
 WantedBy=multi-user.target
 SERVICE
 systemctl daemon-reload
-systemctl enable --now inpagebrowser
+systemctl enable inpagebrowser
+systemctl restart inpagebrowser
 echo '[5/5] 完成。'
 echo '服务监听: 0.0.0.0:4002'
+echo 'Linux Chromium 容器使用 host network；KasmVNC/CDP 固定使用本机 6901/9222，不依赖 Docker -p/NAT。'
 echo '查看状态: systemctl status inpagebrowser'

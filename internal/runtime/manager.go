@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,19 +113,23 @@ func (m *Manager) Ensure(ctx context.Context, userID string) (*Runtime, error) {
 	_ = os.Chmod(profile, 0777)
 	name := "ipb-" + randomString(8)
 	password := randomString(24)
-	out, err := exec.CommandContext(ctx, "docker", dockerRunArgs(name, password, profile, m.image)...).CombinedOutput()
+	hostNetwork := runtime.GOOS == "linux"
+	out, err := exec.CommandContext(ctx, "docker", dockerRunArgsForNetwork(name, password, profile, m.image, hostNetwork)...).CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("启动 Chromium 容器失败: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	kasmPort, err := dockerMappedPort(ctx, name, "6901/tcp")
-	if err != nil {
-		_ = dockerStop(name)
-		return nil, err
-	}
-	devPort, err := dockerMappedPort(ctx, name, "9222/tcp")
-	if err != nil {
-		_ = dockerStop(name)
-		return nil, err
+	kasmPort, devPort := 6901, 9222
+	if !hostNetwork {
+		kasmPort, err = dockerMappedPort(ctx, name, "6901/tcp")
+		if err != nil {
+			_ = dockerStop(name)
+			return nil, err
+		}
+		devPort, err = dockerMappedPort(ctx, name, "9222/tcp")
+		if err != nil {
+			_ = dockerStop(name)
+			return nil, err
+		}
 	}
 	rt := &Runtime{UserID: userID, Container: name, Password: password, KasmPort: kasmPort, DevtoolsPort: devPort, StartedAt: time.Now(), LastSeen: time.Now()}
 	if err := waitReady(ctx, rt); err != nil {
@@ -187,15 +192,29 @@ func (m *Manager) Proxy(rt *Runtime) *httputil.ReverseProxy {
 }
 
 func dockerRunArgs(name, password, profile, image string) []string {
-	appArgs := "--kiosk --no-first-run --no-default-browser-check --disable-session-crashed-bubble --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --remote-allow-origins=*"
+	return dockerRunArgsForNetwork(name, password, profile, image, runtime.GOOS == "linux")
+}
+
+func dockerRunArgsForNetwork(name, password, profile, image string, hostNetwork bool) []string {
+	debugAddress := "0.0.0.0"
+	if hostNetwork {
+		debugAddress = "127.0.0.1"
+	}
+	appArgs := "--kiosk --no-first-run --no-default-browser-check --disable-session-crashed-bubble --remote-debugging-address=" + debugAddress + " --remote-debugging-port=9222 --remote-allow-origins=*"
 	args := []string{
 		"run", "-d", "--rm", "--name", name,
 		"--label", "inpagebrowser.runtime=1",
 		"--shm-size=384m", "--memory=1100m", "--memory-swap=1536m", "--cpus=1.5", "--pids-limit=512",
-		"-p", "127.0.0.1::6901", "-p", "127.0.0.1::9222",
 	}
-	if browserProxy := strings.TrimSpace(os.Getenv("INPAGE_BROWSER_PROXY")); browserProxy != "" {
-		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+	if hostNetwork {
+		args = append(args, "--network", "host")
+	} else {
+		args = append(args, "-p", "127.0.0.1::6901", "-p", "127.0.0.1::9222")
+	}
+	if browserProxy := strings.TrimSpace(os.Getenv("INPAGE_BROWSER_PROXY")); browserProxy != "" && browserProxy != "direct://" {
+		if !hostNetwork {
+			args = append(args, "--add-host", "host.docker.internal:host-gateway")
+		}
 		appArgs += " --proxy-server=" + browserProxy
 	}
 	args = append(args,
