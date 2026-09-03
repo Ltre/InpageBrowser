@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -133,7 +134,16 @@ func (m *Manager) Ensure(ctx context.Context, userID string) (*Runtime, error) {
 	}
 	rt := &Runtime{UserID: userID, Container: name, Password: password, KasmPort: kasmPort, DevtoolsPort: devPort, StartedAt: time.Now(), LastSeen: time.Now()}
 	if err := waitReady(ctx, rt); err != nil {
+		diag := dockerDiagnostics(name)
+		if diag != "" {
+			log.Printf("runtime container %s startup failed: %v\n%s", name, err, diag)
+		} else {
+			log.Printf("runtime container %s startup failed: %v", name, err)
+		}
 		_ = dockerStop(name)
+		if diag != "" {
+			return nil, fmt.Errorf("%v；容器启动诊断已写入 inpagebrowser 服务日志", err)
+		}
 		return nil, err
 	}
 	m.mu.Lock()
@@ -202,7 +212,7 @@ func dockerRunArgsForNetwork(name, password, profile, image string, hostNetwork 
 	}
 	appArgs := "--kiosk --no-first-run --no-default-browser-check --disable-session-crashed-bubble --remote-debugging-address=" + debugAddress + " --remote-debugging-port=9222 --remote-allow-origins=*"
 	args := []string{
-		"run", "-d", "--rm", "--name", name,
+		"run", "-d", "--name", name,
 		"--label", "inpagebrowser.runtime=1",
 		"--shm-size=384m", "--memory=1100m", "--memory-swap=1536m", "--cpus=1.5", "--pids-limit=512",
 	}
@@ -258,6 +268,9 @@ func waitReady(ctx context.Context, rt *Runtime) error {
 		if err1 == nil && err2 == nil {
 			return nil
 		}
+		if state, running := dockerContainerState(ctx, rt.Container); state != "" && !running {
+			return fmt.Errorf("Chromium/KasmVNC 容器已退出 (%s)", state)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -265,6 +278,37 @@ func waitReady(ctx context.Context, rt *Runtime) error {
 		}
 	}
 	return errors.New("Chromium/KasmVNC 在 30 秒内没有就绪")
+}
+
+func dockerContainerState(ctx context.Context, name string) (string, bool) {
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}|{{.State.ExitCode}}|{{.State.Error}}", name).Output()
+	if err != nil {
+		return "", false
+	}
+	state := strings.TrimSpace(string(out))
+	return state, strings.HasPrefix(state, "running|")
+}
+
+func dockerDiagnostics(name string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	parts := make([]string, 0, 2)
+	if out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}", name).CombinedOutput(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			parts = append(parts, "inspect: "+s)
+		}
+	}
+	if out, err := exec.CommandContext(ctx, "docker", "logs", "--tail", "120", name).CombinedOutput(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			parts = append(parts, "logs:\n"+s)
+		}
+	}
+	diag := strings.TrimSpace(strings.Join(parts, "\n"))
+	runes := []rune(diag)
+	if len(runes) > 6000 {
+		diag = "…" + string(runes[len(runes)-6000:])
+	}
+	return diag
 }
 
 func (m *Manager) reap() {
@@ -316,7 +360,7 @@ func dockerStop(name string) error {
 	if name == "" {
 		return nil
 	}
-	return exec.Command("docker", "stop", "-t", "3", name).Run()
+	return exec.Command("docker", "rm", "-f", name).Run()
 }
 
 func randomString(n int) string {

@@ -8,12 +8,12 @@ import (
 func TestDockerRunArgsLinuxHostNetworkAvoidsPublishedPorts(t *testing.T) {
 	a := dockerRunArgsForNetwork("ipb-test", "secret", "/srv/profile", "kasmweb/chromium:1.18.0", true)
 	joined := strings.Join(a, " ")
-	for _, want := range []string{"--rm", "--network host", "--memory=1100m", "--cpus=1.5", "VNC_PW=secret", "--kiosk", "--remote-debugging-address=127.0.0.1", "/srv/profile:/home/kasm-user"} {
+	for _, want := range []string{"--network host", "--memory=1100m", "--cpus=1.5", "VNC_PW=secret", "--kiosk", "--remote-debugging-address=127.0.0.1", "/srv/profile:/home/kasm-user"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %s", want, joined)
 		}
 	}
-	for _, unwanted := range []string{"127.0.0.1::6901", "127.0.0.1::9222", " -p "} {
+	for _, unwanted := range []string{" --rm ", "127.0.0.1::6901", "127.0.0.1::9222", " -p "} {
 		if strings.Contains(" "+joined+" ", unwanted) {
 			t.Fatalf("unexpected %q in %s", unwanted, joined)
 		}
@@ -27,6 +27,9 @@ func TestDockerRunArgsBridgeKeepsRandomLoopbackMappings(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %s", want, joined)
 		}
+	}
+	if strings.Contains(" "+joined+" ", " --rm ") {
+		t.Fatalf("unexpected --rm in %s", joined)
 	}
 }
 
